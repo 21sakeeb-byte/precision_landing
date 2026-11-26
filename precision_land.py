@@ -8,7 +8,7 @@ from picamera2 import Picamera2
 from pymavlink import mavutil
 
 # --- 1. Configuration ---
-ENABLE_MAVLINK = False          # Set True when wired to Pixhawk TELEM2
+ENABLE_MAVLINK = True          # Set True when wired to Pixhawk TELEM2
 SERIAL_PORT = "/dev/ttyAMA0"
 BAUD_RATE = 921600
 
