@@ -8,28 +8,34 @@ from picamera2 import Picamera2
 from pymavlink import mavutil
 
 # --- 1. Configuration ---
-ENABLE_MAVLINK = True          # Set True when wired to Pixhawk TELEM2
+ENABLE_MAVLINK = False          # Set True when wired to Pixhawk TELEM2
 SERIAL_PORT = "/dev/ttyAMA0"
 BAUD_RATE = 921600
 
 OUTER_ID = 0
-OUTER_SIZE_M = 0.25            # Update to your final outdoor pad size (e.g., 0.25)
+# Update to your final outdoor pad size (e.g., 0.25)
+OUTER_SIZE_M = 0.25
 INNER_ID = 1
-INNER_SIZE_M = 0.04            # Update to your final indoor/inner pad size (e.g., 0.07)
+# Update to your final indoor/inner pad size (e.g., 0.07)
+INNER_SIZE_M = 0.04
 HANDOFF_Z_M = 1.50              # Switch to inner marker below 1.5m
 MAX_COAST_SEC = 0.50            # Kalman prediction coast limit during brief frame drops
 
 CALIB_FILE = os.path.expanduser("~/aruco_test/camera_calibration.yaml")
 
 # --- 2. 2D Constant-Velocity Kalman Filter [x, y, vx, vy] ---
+
+
 class TargetKalman2D:
     def __init__(self):
         self.x = np.zeros((4, 1), dtype=np.float64)
         self.P = np.eye(4, dtype=np.float64) * 1.0
         self.H = np.array([[1, 0, 0, 0],
                            [0, 1, 0, 0]], dtype=np.float64)
-        self.R = np.eye(2, dtype=np.float64) * 0.002   # Measurement noise (~4.5 cm std)
-        self.q_accel = 0.5                              # Process noise (target acceleration)
+        # Measurement noise (~4.5 cm std)
+        self.R = np.eye(2, dtype=np.float64) * 0.002
+        # Process noise (target acceleration)
+        self.q_accel = 0.5
         self.initialized = False
         self.last_meas_time = 0.0
 
@@ -55,7 +61,8 @@ class TargetKalman2D:
     def update(self, meas_x, meas_y, now):
         z = np.array([[meas_x], [meas_y]], dtype=np.float64)
         if not self.initialized:
-            self.x = np.array([[meas_x], [meas_y], [0.0], [0.0]], dtype=np.float64)
+            self.x = np.array(
+                [[meas_x], [meas_y], [0.0], [0.0]], dtype=np.float64)
             self.P = np.eye(4, dtype=np.float64) * 0.1
             self.initialized = True
             self.last_meas_time = now
@@ -70,6 +77,7 @@ class TargetKalman2D:
     def is_valid(self, now):
         return self.initialized and ((now - self.last_meas_time) <= MAX_COAST_SEC)
 
+
 # --- 3. Load Camera Calibration ---
 fs = cv2.FileStorage(CALIB_FILE, cv2.FILE_STORAGE_READ)
 if not fs.isOpened():
@@ -78,14 +86,16 @@ camera_matrix = fs.getNode("camera_matrix").mat()
 dist_coeffs = fs.getNode("distortion_coefficients").mat()
 fs.release()
 
+
 def get_marker_obj_points(size_m):
     half = size_m / 2.0
     return np.array([
         [-half,  half, 0.0],
-        [ half,  half, 0.0],
-        [ half, -half, 0.0],
+        [half,  half, 0.0],
+        [half, -half, 0.0],
         [-half, -half, 0.0]
     ], dtype=np.float32)
+
 
 OBJ_PTS = {
     OUTER_ID: get_marker_obj_points(OUTER_SIZE_M),
@@ -116,6 +126,7 @@ kf = TargetKalman2D()
 
 app = Flask(__name__)
 
+
 def estimate_pose(corners_2d, marker_id):
     ok, rvec, tvec = cv2.solvePnP(
         OBJ_PTS[marker_id],
@@ -128,6 +139,7 @@ def estimate_pose(corners_2d, marker_id):
         return None
     x, y, z = tvec.ravel()
     return x, y, z, rvec, tvec
+
 
 def generate_frames():
     prev_time = time.time()
@@ -168,20 +180,22 @@ def generate_frames():
             cam_x, cam_y, cam_z, rvec, tvec = poses[active_id]
             last_z = cam_z
             kf.update(cam_x, cam_y, now)
-            cv2.drawFrameAxes(frame, camera_matrix, dist_coeffs, rvec, tvec, 0.05)
+            cv2.drawFrameAxes(frame, camera_matrix,
+                              dist_coeffs, rvec, tvec, 0.05)
 
         if kf.is_valid(now):
             fx, fy, vx, vy = kf.x.ravel()
             # Map camera frame (top of image = drone nose) to MAV_FRAME_BODY_FRD
             body_x = -fy   # Forward
-            body_y =  fx   # Right
+            body_y = fx   # Right
             body_z = last_z
 
             angle_x = math.atan2(body_y, body_z)  # Rightward angle (rad)
             angle_y = math.atan2(body_x, body_z)  # Forward angle (rad)
 
             if ENABLE_MAVLINK and mav is not None:
-                print(f"[TX] ID={active_id} X={body_x:.2f}m Y={body_y:.2f}m Z={body_z:.2f}m", flush=True)
+                print(
+                    f"[TX] ID={active_id} X={body_x:.2f}m Y={body_y:.2f}m Z={body_z:.2f}m", flush=True)
                 mav.mav.landing_target_send(
                     int(now * 1e6),                         # time_usec
                     0,                                      # target_num
@@ -201,14 +215,18 @@ def generate_frames():
                 f"[{mode_tag}] FRD X:{body_x:+.3f}m Y:{body_y:+.3f}m Z:{body_z:.3f}m | "
                 f"Vel:({vx:+.2f},{vy:+.2f})m/s"
             )
-            cv2.putText(frame, status, (15, 65), cv2.FONT_HERSHEY_SIMPLEX, 0.62, (0, 255, 0), 2)
+            cv2.putText(frame, status, (15, 65),
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.62, (0, 255, 0), 2)
         else:
-            cv2.putText(frame, "NO TARGET LOCK (SAFE HOVER)", (15, 65), cv2.FONT_HERSHEY_SIMPLEX, 0.65, (0, 140, 255), 2)
+            cv2.putText(frame, "NO TARGET LOCK (SAFE HOVER)", (15, 65),
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.65, (0, 140, 255), 2)
 
-        cv2.putText(frame, f"FPS:{fps:.1f} | MAVLink:{ENABLE_MAVLINK}", (15, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.65, (255, 255, 0), 2)
+        cv2.putText(frame, f"FPS:{fps:.1f} | MAVLink:{ENABLE_MAVLINK}",
+                    (15, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.65, (255, 255, 0), 2)
 
         _, buffer = cv2.imencode(".jpg", frame, [cv2.IMWRITE_JPEG_QUALITY, 80])
         yield (b"--frame\r\nContent-Type: image/jpeg\r\n\r\n" + buffer.tobytes() + b"\r\n")
+
 
 @app.route("/")
 def index():
@@ -219,9 +237,11 @@ def index():
     </body></html>
     """
 
+
 @app.route("/video_feed")
 def video_feed():
     return Response(generate_frames(), mimetype="multipart/x-mixed-replace; boundary=frame")
+
 
 if __name__ == "__main__":
     try:
